@@ -11,6 +11,7 @@
 #include <sys/stat.h>   
 #include <sys/types.h>  
 #include <errno.h>      
+#include <dirent.h>
 int sendStuff(char *buffer, int sd, struct sockaddr_in server_address);
 void makeSocket(int *sd, char *argv[], struct sockaddr_in *server_address);
 FILE * openFile();
@@ -111,27 +112,10 @@ void jsontostring(json *data, char *buffer) {
 
     strcat(buffer, "}"); // end
 }
+int processfile(char *path_to_file, char *fileName, char *base_dir){  
+    FILE * fptr;
+    fptr = fopen(path_to_file,"rb"); // open the file with the data to send
 
-int main(int argc, char *argv[])
-{
-  int sd; /* the socket descriptor */
-  struct sockaddr_in server_address;  /* structures for addresses */
-  char * lineFromFile = NULL;
-  FILE * fptr;
-  int rc;
-  size_t lengthRead = 0;
-  
-  /* checck to see if the right number of parameters was entered */
-  if (argc < 3){
-    printf ("usage is client <ipaddr> <portnumber>\n");
-    exit(1); /* just leave if wrong number entered */
-  }
-
-  /* call the function to make the socket and fill in server address */
-  makeSocket(&sd, argv, &server_address);
-  fptr = openFile(); // open the file with the data to send
-
-  /* now we will loop until the end of file, sending one line */
 
   
 #define CHUNK_SIZE (500 * 1024) // 512000 bytes
@@ -193,8 +177,8 @@ while ((bytesRead = fread(buffer, 1, CHUNK_SIZE, fptr)) > 0) {
     // print generated JSON string
     // note: ensure jsontostring works with your struct
     char output[1024] = {0};
-    jsontostring(&temp,output);
-    printf("%s\n", output);
+    // jsontostring(&temp,output);
+    // printf("%s\n", output);
     // --- JSON operations end ---
 
     FILE *chunkFile = fopen(chunkPath, "wb"); // use binary write mode
@@ -217,15 +201,10 @@ for (int i = 0; i < SHA256_DIGEST_LENGTH; i++) {
 }
 finalHexHash[64] = '\0';
 
-// ... (code for finalHexHash remains unchanged) ...
 
-  // ==========================================
   // start building final JSON string
-  // ==========================================
-
 
   
-  for (int i = 0; i < chunk_count; i++) {
     printf("{\n");
     printf("\t\"filename\":\t\"%s\",\n", fileName);
   printf("\t\"fileSize\":\t%zu,\n", totalFileSize);
@@ -233,18 +212,59 @@ finalHexHash[64] = '\0';
   
   // loop to print chunk_hashes array on one line
   printf("\t\"chunk_hashes\": [");
-      printf("\"%s\"", hashes[i]);
+  for (int i = 0; i < chunk_count; i++) {
+      printf("\"%s\"", hashes[i+1]);
       if (i < chunk_count - 1) {
           printf(", "); // space after comma
+      }
       }
       printf("],\n");
 
   printf("\t\"fullFileHash\": \"%s\"\n", finalHexHash);
   printf("},");
-  }
+  
   
 
   return 0; 
+}
+int main(int argc, char *argv[])
+{
+    if (argc < 2) {
+        printf("Usage: %s <directory_path> <ipaddr> <portnumber>\n", argv[0]);
+        exit(1);
+    }
+
+    char *targetDir = argv[1];
+    DIR *dirPtr = opendir(targetDir);
+    struct dirent *entry;
+
+    if (dirPtr == NULL) {
+        perror("Unable to open directory");
+        exit(1);
+    }
+
+    // Loop through all files in the directory
+    while ((entry = readdir(dirPtr)) != NULL) {
+        // Exclude directories and hidden files
+        if (strchr(entry->d_name, ':') != NULL) continue;
+        if (entry->d_type == DT_REG) {
+            char fullFilePath[512];
+            snprintf(fullFilePath, sizeof(fullFilePath), "%s/%s", targetDir, entry->d_name);
+            processfile(fullFilePath, entry->d_name, targetDir);
+        }
+    }
+    closedir(dirPtr);
+
+    // If there are enough command-line arguments, continue executing the Socket logic
+    if (argc >= 4) {
+        int sd; 
+        struct sockaddr_in server_address;  
+        char *argv_for_socket[] = {argv[0], argv[2], argv[3]};
+        makeSocket(&sd, argv_for_socket, &server_address);
+        // You can call sendStuff here to send data
+    }
+
+    return 0;
 }
 
 
